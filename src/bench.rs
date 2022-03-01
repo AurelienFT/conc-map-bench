@@ -1,6 +1,8 @@
 use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::{fmt::Debug, io, thread::sleep, time::Duration};
 
+use massa_models::prehash::{PreHashedMap, BuildMap};
 use bustle::*;
 use fxhash::FxBuildHasher;
 use structopt::StructOpt;
@@ -86,18 +88,10 @@ fn run(options: &Options, h: &mut Handler) {
     case::<CrossbeamSkipMapTable<u64>>("CrossbeamSkipMap", options, h);
     case::<RwLockBTreeMapTable<u64>>("RwLock<BTreeMap>", options, h);
 
-    if options.use_std_hasher {
-        case::<RwLockStdHashMapTable<u64, RandomState>>("RwLock<StdHashMap>", options, h);
-        case::<DashMapTable<u64, RandomState>>("DashMap", options, h);
-        case::<FlurryTable<u64, RandomState>>("Flurry", options, h);
-        case::<EvmapTable<u64, RandomState>>("Evmap", options, h);
-        case::<CHashMapTable<u64>>("CHashMap", options, h);
-    } else {
-        case::<RwLockStdHashMapTable<u64, FxBuildHasher>>("RwLock<FxHashMap>", options, h);
-        case::<DashMapTable<u64, FxBuildHasher>>("FxDashMap", options, h);
-        case::<FlurryTable<u64, FxBuildHasher>>("FxFlurry", options, h);
-        case::<EvmapTable<u64, FxBuildHasher>>("FxEvmap", options, h);
-    }
+    case::<RwLockStdHashMapTable<u64, BuildMap<massa_hash::hash::Hash>>>("RwLock<MassaPreHashMap>", options, h);
+    case::<DashMapTable<u64, BuildMap<massa_hash::hash::Hash>>>("MassaPreHashDashMap", options, h);
+    case::<FlurryTable<u64, BuildMap<massa_hash::hash::Hash>>>("MassaPreHashFlurry", options, h);
+    case::<EvmapTable<u64, BuildMap<massa_hash::hash::Hash>>>("MassaPreHashEvmap", options, h);
 }
 
 pub fn bench(options: &Options) {
