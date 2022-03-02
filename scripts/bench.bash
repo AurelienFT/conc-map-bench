@@ -9,7 +9,7 @@ cargo build --release
 mkdir -p "$OUT"
 
 function bench {
-    ARGS=$2
+    ARGS="${@:2}"
 
     date
 
@@ -22,10 +22,10 @@ function bench {
     skip=$(cat "$file" | cut -d, -f1 | uniq | paste -sd ' ' -)
 
     if ! "$BIN" bench -w $1 $ARGS --skip $skip --csv 2>>"$file"; then
-        bench "$1" "$2"
+        bench "$1" "$2" "$3"
     fi
 }
 
-bench ReadHeavy
-bench Exchange
-bench RapidGrow
+bench ReadHeavy "$@"
+bench Exchange "$@"
+bench RapidGrow "$@"

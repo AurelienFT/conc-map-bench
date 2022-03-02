@@ -1,10 +1,7 @@
-use std::collections::hash_map::RandomState;
-use std::hash::BuildHasher;
 use std::{fmt::Debug, io, thread::sleep, time::Duration};
 
-use massa_models::prehash::{PreHashedMap, BuildMap};
 use bustle::*;
-use fxhash::FxBuildHasher;
+use massa_models::prehash::BuildMap;
 use structopt::StructOpt;
 
 use crate::{adapters::*, record::Record, workloads};
@@ -16,7 +13,9 @@ pub struct Options {
     #[structopt(short, long, default_value = "1")]
     pub operations: f64,
     #[structopt(long)]
-    pub threads: Option<Vec<u32>>,
+    pub read_threads: Option<Vec<u32>>,
+    #[structopt(long)]
+    pub write_threads: Option<Vec<u32>>,
     #[structopt(long)]
     pub use_std_hasher: bool,
     #[structopt(long, default_value = "2000")]
@@ -40,7 +39,7 @@ fn gc_cycle(options: &Options) {
     }
 }
 
-type Handler = Box<dyn FnMut(&str, u32, &Measurement)>;
+type Handler = Box<dyn FnMut(&str, (&u32, &u32), &Measurement)>;
 
 fn case<C>(name: &str, options: &Options, handler: &mut Handler)
 where
@@ -59,17 +58,26 @@ where
         println!("-- {}", name);
     }
 
-    let threads = options
-        .threads
+    println!("{:#?}", options.read_threads);
+
+    let read_threads = options
+        .read_threads
         .as_ref()
         .cloned()
-        .unwrap_or_else(|| (1..(num_cpus::get() * 3 / 2) as u32).collect());
+        .unwrap_or_else(|| (1..(num_cpus::get() * 3 / 2 / 2) as u32).collect());
+
+    let write_threads = options
+        .write_threads
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| (1..(num_cpus::get() * 3 / 2 / 2) as u32).collect());
 
     let mut first_throughput = None;
 
-    for n in &threads {
-        let m = workloads::create(options, *n).run_silently::<C>();
-        handler(name, *n, &m);
+    let scenarios = read_threads.iter().zip(write_threads.iter());
+    for scenario in scenarios {
+        let m = workloads::create(options, *scenario.0, *scenario.1).run_silently::<C>();
+        handler(name, scenario, &m);
 
         if !options.complete_slow {
             let threshold = *first_throughput.get_or_insert(m.throughput) / 5.;
@@ -88,7 +96,11 @@ fn run(options: &Options, h: &mut Handler) {
     case::<CrossbeamSkipMapTable<u64>>("CrossbeamSkipMap", options, h);
     case::<RwLockBTreeMapTable<u64>>("RwLock<BTreeMap>", options, h);
 
-    case::<RwLockStdHashMapTable<u64, BuildMap<massa_hash::hash::Hash>>>("RwLock<MassaPreHashMap>", options, h);
+    case::<RwLockStdHashMapTable<u64, BuildMap<massa_hash::hash::Hash>>>(
+        "RwLock<MassaPreHashMap>",
+        options,
+        h,
+    );
     case::<DashMapTable<u64, BuildMap<massa_hash::hash::Hash>>>("MassaPreHashDashMap", options, h);
     case::<FlurryTable<u64, BuildMap<massa_hash::hash::Hash>>>("MassaPreHashFlurry", options, h);
     case::<EvmapTable<u64, BuildMap<massa_hash::hash::Hash>>>("MassaPreHashEvmap", options, h);
@@ -102,11 +114,12 @@ pub fn bench(options: &Options) {
             .has_headers(!options.csv_no_headers)
             .from_writer(io::stderr());
 
-        Box::new(move |name: &str, n, m: &Measurement| {
+        Box::new(move |name: &str, n: (&u32, &u32), m: &Measurement| {
             wr.serialize(Record {
                 name: name.into(),
                 total_ops: m.total_ops,
-                threads: n,
+                read_threads: *n.0,
+                write_threads: *n.1,
                 spent: m.spent,
                 throughput: m.throughput,
                 latency: m.latency,
@@ -115,10 +128,10 @@ pub fn bench(options: &Options) {
             wr.flush().expect("cannot flush");
         }) as Handler
     } else {
-        Box::new(|_: &str, n, m: &Measurement| {
+        Box::new(|_: &str, n: (&u32, &u32), m: &Measurement| {
             eprintln!(
-                "total_ops={}\tthreads={}\tspent={:.1?}\tlatency={:?}\tthroughput={:.0}op/s",
-                m.total_ops, n, m.spent, m.latency, m.throughput,
+                "total_ops={}\tread_threads={}\twrite_threads={}\tspent={:.1?}\tlatency={:?}\tthroughput={:.0}op/s",
+                m.total_ops, n.0, n.1, m.spent, m.latency, m.throughput,
             );
         }) as Handler
     };

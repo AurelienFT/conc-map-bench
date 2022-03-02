@@ -59,11 +59,28 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
 
     root.fill(&WHITE)?;
 
-    let (x_max, y_max) = groups
+    let mut all_threads_combinaisons = vec![];
+    let (x_min, x_max, y_min, y_max) = groups
         .values()
         .flatten()
-        .map(|record| (record.threads, record.throughput))
-        .fold((0, 0f64), |res, cur| (res.0.max(cur.0), res.1.max(cur.1)));
+        .map(|record| {
+            all_threads_combinaisons.push(record.read_threads * 1000 + record.write_threads);
+            (
+                record.read_threads * 1000 + record.write_threads,
+                record.throughput,
+            )
+        })
+        .fold((u32::MAX, 0, f64::MAX, 0f64), |res, cur| {
+            (
+                res.0.min(cur.0 - 1000),
+                res.1.max(cur.0 + 1000),
+                res.2.min(cur.1),
+                res.3.max(cur.1),
+            )
+        });
+
+    all_threads_combinaisons.insert(0, x_min);
+    all_threads_combinaisons.push(x_max);
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
@@ -71,11 +88,13 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
         .set_label_area_size(LabelAreaPosition::Left, 70)
         .set_label_area_size(LabelAreaPosition::Right, 70)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(1..x_max, 0.0..y_max)?;
+        .build_cartesian_2d(
+            (x_min..x_max).with_key_points(all_threads_combinaisons),
+            0f64..y_max,
+        )?;
 
     chart
         .configure_mesh()
-        .disable_y_mesh()
         .x_label_formatter(&|v| format!("{}", v))
         .y_label_formatter(&|v| format!("{:.0} Mop/s", v / 1_000_000.))
         .x_labels(20)
@@ -88,9 +107,12 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
     for (records, color) in groups.values().zip(colors) {
         chart
             .draw_series(LineSeries::new(
-                records
-                    .iter()
-                    .map(|record| (record.threads, record.throughput)),
+                records.iter().map(|record| {
+                    (
+                        record.read_threads * 1000 + record.write_threads,
+                        record.throughput,
+                    )
+                }),
                 color,
             ))?
             .label(&records[0].name)
@@ -115,13 +137,36 @@ fn plot_latency(options: &Options, groups: &Groups) -> Result<(), Box<dyn Error>
 
     root.fill(&WHITE)?;
 
-    let (x_max, y_max) = groups
+    let mut all_threads_combinaisons = vec![];
+    let (x_min, x_max, y_min, y_max) = groups
         .values()
         .flatten()
-        .map(|record| (record.threads, record.latency))
-        .fold((0, Duration::from_secs(0)), |res, cur| {
-            (res.0.max(cur.0), res.1.max(cur.1))
-        });
+        .map(|record| {
+            all_threads_combinaisons.push(record.read_threads * 1000 + record.write_threads);
+            (
+                record.read_threads * 1000 + record.write_threads,
+                record.latency,
+            )
+        })
+        .fold(
+            (
+                u32::MAX,
+                0,
+                Duration::from_secs(100000),
+                Duration::from_secs(0),
+            ),
+            |res, cur| {
+                (
+                    res.0.min(cur.0 - 1000),
+                    res.1.max(cur.0 + 1000),
+                    res.2.min(cur.1),
+                    res.3.max(cur.1),
+                )
+            },
+        );
+
+    all_threads_combinaisons.insert(0, x_min);
+    all_threads_combinaisons.push(x_max);
 
     let y_max = options.latency_limit_ns.min(y_max.as_nanos() as u64);
 
@@ -149,9 +194,12 @@ fn plot_latency(options: &Options, groups: &Groups) -> Result<(), Box<dyn Error>
     for (records, color) in groups.values().zip(colors) {
         chart
             .draw_series(LineSeries::new(
-                records
-                    .iter()
-                    .map(|record| (record.threads, record.latency.as_nanos() as u64)),
+                records.iter().map(|record| {
+                    (
+                        record.read_threads * 1000 + record.write_threads,
+                        record.latency.as_nanos() as u64,
+                    )
+                }),
                 color,
             ))?
             .label(&records[0].name)

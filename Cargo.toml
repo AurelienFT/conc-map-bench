@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-bustle = "0.4.2"
+bustle = { git = "https://github.com/AurelienFT/bustle.git" }
 tracing-subscriber = "0.3.3"
 num_cpus = "1.13.0"
 fxhash = "0.2.1"
