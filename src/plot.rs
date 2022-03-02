@@ -59,28 +59,17 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
 
     root.fill(&WHITE)?;
 
-    let mut all_threads_combinaisons = vec![];
-    let (x_min, x_max, y_min, y_max) = groups
+    let (x_max, y_max) = groups
         .values()
         .flatten()
         .map(|record| {
-            all_threads_combinaisons.push(record.read_threads * 1000 + record.write_threads);
             (
-                record.read_threads * 1000 + record.write_threads,
+                (record.read_threads as f64 / ((record.read_threads + record.write_threads) as f64)
+                    * 100f64) as i32,
                 record.throughput,
             )
         })
-        .fold((u32::MAX, 0, f64::MAX, 0f64), |res, cur| {
-            (
-                res.0.min(cur.0 - 1000),
-                res.1.max(cur.0 + 1000),
-                res.2.min(cur.1),
-                res.3.max(cur.1),
-            )
-        });
-
-    all_threads_combinaisons.insert(0, x_min);
-    all_threads_combinaisons.push(x_max);
+        .fold((0, 0f64), |res, cur| (res.0.max(cur.0), res.1.max(cur.1)));
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
@@ -88,10 +77,7 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
         .set_label_area_size(LabelAreaPosition::Left, 70)
         .set_label_area_size(LabelAreaPosition::Right, 70)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(
-            (x_min..x_max).with_key_points(all_threads_combinaisons),
-            0f64..y_max,
-        )?;
+        .build_cartesian_2d(0..100, 0f64..y_max)?;
 
     chart
         .configure_mesh()
@@ -99,7 +85,7 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
         .y_label_formatter(&|v| format!("{:.0} Mop/s", v / 1_000_000.))
         .x_labels(20)
         .y_desc("Throughput")
-        .x_desc("Threads")
+        .x_desc("% of Reading threads")
         .draw()?;
 
     let colors = COLORS.iter().cycle();
@@ -109,7 +95,9 @@ fn plot_throughput(options: &Options, groups: &Groups) -> Result<(), Box<dyn Err
             .draw_series(LineSeries::new(
                 records.iter().map(|record| {
                     (
-                        record.read_threads * 1000 + record.write_threads,
+                        (record.read_threads as f64
+                            / ((record.read_threads + record.write_threads) as f64)
+                            * 100f64) as i32,
                         record.throughput,
                     )
                 }),
@@ -137,36 +125,19 @@ fn plot_latency(options: &Options, groups: &Groups) -> Result<(), Box<dyn Error>
 
     root.fill(&WHITE)?;
 
-    let mut all_threads_combinaisons = vec![];
-    let (x_min, x_max, y_min, y_max) = groups
+    let (x_max, y_max) = groups
         .values()
         .flatten()
         .map(|record| {
-            all_threads_combinaisons.push(record.read_threads * 1000 + record.write_threads);
             (
-                record.read_threads * 1000 + record.write_threads,
+                (record.read_threads as f64 / ((record.read_threads + record.write_threads) as f64)
+                    * 100f64) as i32,
                 record.latency,
             )
         })
-        .fold(
-            (
-                u32::MAX,
-                0,
-                Duration::from_secs(100000),
-                Duration::from_secs(0),
-            ),
-            |res, cur| {
-                (
-                    res.0.min(cur.0 - 1000),
-                    res.1.max(cur.0 + 1000),
-                    res.2.min(cur.1),
-                    res.3.max(cur.1),
-                )
-            },
-        );
-
-    all_threads_combinaisons.insert(0, x_min);
-    all_threads_combinaisons.push(x_max);
+        .fold((0, Duration::from_secs(0)), |res, cur| {
+            (res.0.max(cur.0), res.1.max(cur.1))
+        });
 
     let y_max = options.latency_limit_ns.min(y_max.as_nanos() as u64);
 
@@ -176,7 +147,7 @@ fn plot_latency(options: &Options, groups: &Groups) -> Result<(), Box<dyn Error>
         .set_label_area_size(LabelAreaPosition::Left, 70)
         .set_label_area_size(LabelAreaPosition::Right, 70)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
-        .build_cartesian_2d(1..x_max, 0..y_max)?;
+        .build_cartesian_2d(0..100, 0..y_max)?;
 
     chart
         .configure_mesh()
@@ -196,7 +167,9 @@ fn plot_latency(options: &Options, groups: &Groups) -> Result<(), Box<dyn Error>
             .draw_series(LineSeries::new(
                 records.iter().map(|record| {
                     (
-                        record.read_threads * 1000 + record.write_threads,
+                        (record.read_threads as f64
+                            / ((record.read_threads + record.write_threads) as f64)
+                            * 100f64) as i32,
                         record.latency.as_nanos() as u64,
                     )
                 }),
